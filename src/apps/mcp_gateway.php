@@ -114,8 +114,9 @@ final class McpGateway
                 self::audit($token, $full, empty($result['isError']), $started);
                 return ['status' => 200, 'body' => self::ok($id, $result)];
             } catch (\Throwable $e) {
+                error_log('[aiopskit gateway] ' . $full . ': ' . $e->getMessage());
                 self::audit($token, $full, false, $started);
-                return ['status' => 200, 'body' => self::ok($id, ['content' => [['type' => 'text', 'text' => $e->getMessage()]], 'isError' => true])];
+                return ['status' => 200, 'body' => self::ok($id, ['content' => [['type' => 'text', 'text' => 'Backend error. Check the server log for details.']], 'isError' => true])];
             }
         }
         return ['status' => 200, 'body' => ['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => -32601, 'message' => 'Method not found']]];
@@ -184,7 +185,13 @@ final class McpGateway
             if (!is_array($data)) {
                 throw new \RuntimeException('Backend returned non-JSON (HTTP ' . $response['status'] . ').');
             }
-            return $listOnly ? (array) ($data['result'] ?? []) : (array) ($data['result'] ?? []);
+            if (isset($data['error'])) {
+                throw new \RuntimeException('Backend error: ' . (string) ($data['error']['message'] ?? 'unknown'));
+            }
+            if (!array_key_exists('result', $data)) {
+                throw new \RuntimeException('Backend returned no result.');
+            }
+            return (array) $data['result'];
         }
         $command = array_merge([(string) ($config['command'] ?? 'php')], array_map('strval', (array) ($config['args'] ?? [])));
         $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
@@ -198,15 +205,42 @@ final class McpGateway
             'method' => 'initialize',
             'params' => ['protocolVersion' => '2024-11-05', 'capabilities' => new \stdClass()],
         ]) . "\n" . Util::json($request) . "\n";
-        fwrite($pipes[0], $payload);
-        fclose($pipes[0]);
+        $timeout = (int) ($config['timeout'] ?? 20);
+        $maxOutput = 2 * 1024 * 1024;
+        $started = microtime(true);
+        $deadline = $started + $timeout;
+        stream_set_blocking($pipes[0], false);
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
+        $written = 0;
+        $length = strlen($payload);
+        while ($written < $length && microtime(true) < $deadline) {
+            $n = fwrite($pipes[0], substr($payload, $written));
+            if ($n === false) {
+                break;
+            }
+            if ($n === 0) {
+                usleep(10000);
+                continue;
+            }
+            $written += $n;
+        }
+        fclose($pipes[0]);
         $stdout = '';
-        $started = microtime(true);
-        $timeout = (int) ($config['timeout'] ?? 20);
-        while (microtime(true) - $started < $timeout) {
-            $stdout .= (string) stream_get_contents($pipes[1]);
+        $stderr = '';
+        while (microtime(true) < $deadline) {
+            $chunk = stream_get_contents($pipes[1]);
+            if ($chunk !== false && $chunk !== '') {
+                $stdout .= $chunk;
+                if (strlen($stdout) > $maxOutput) {
+                    proc_terminate($process, 9);
+                    throw new \RuntimeException('Backend output exceeded 2 MB.');
+                }
+            }
+            $errorChunk = stream_get_contents($pipes[2]);
+            if ($errorChunk !== false && $errorChunk !== '') {
+                $stderr = substr($stderr . $errorChunk, -4096);
+            }
             if (str_contains($stdout, '"id":' . $request['id']) && substr_count($stdout, "\n") >= 2) {
                 break;
             }
