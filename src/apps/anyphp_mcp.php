@@ -58,10 +58,14 @@ final class AnyPhpMcp
     {
         $out = [];
         foreach (self::loadTools() as $tool) {
+            $schema = $tool['inputSchema'] ?? ['type' => 'object', 'properties' => []];
+            if (is_array($schema) && isset($schema['properties']) && $schema['properties'] === []) {
+                $schema['properties'] = new \stdClass();
+            }
             $out[] = [
                 'name' => (string) $tool['name'],
                 'description' => (string) ($tool['description'] ?? ''),
-                'inputSchema' => $tool['inputSchema'] ?? ['type' => 'object', 'properties' => new \stdClass()],
+                'inputSchema' => $schema,
             ];
         }
         return $out;
@@ -94,6 +98,12 @@ final class AnyPhpMcp
             }
         }
         $env['AIOPSKIT_TOOL_ARGS'] = Util::json($args);
+        if (!isset($env['PATH']) && getenv('PATH') !== false) {
+            $env['PATH'] = (string) getenv('PATH');
+        }
+        if (!isset($env['HOME']) && getenv('HOME') !== false) {
+            $env['HOME'] = (string) getenv('HOME');
+        }
 
         $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $process = proc_open(array_merge([$command], $commandArgs), $descriptors, $pipes, $cwd, $env ?: null);

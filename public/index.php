@@ -11,6 +11,29 @@ use AIOpsKit\Apps\TokenLedger;
 use AIOpsKit\Apps\UsageDashboard;
 use AIOpsKit\View;
 
+/**
+ * The UI has no session auth. Reject cross-site POSTs so that a third-party
+ * page cannot approve a pending Agent Guard request through HTTP auth.
+ */
+function same_origin(): bool
+{
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    $referer = (string) ($_SERVER['HTTP_REFERER'] ?? '');
+    $source = $origin !== '' ? $origin : $referer;
+    if ($source === '') {
+        return false;
+    }
+    $sourceHost = parse_url($source, PHP_URL_HOST);
+    return is_string($sourceHost) && $sourceHost === parse_url('http://' . $host, PHP_URL_HOST);
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !same_origin()) {
+    http_response_code(403);
+    echo 'Forbidden: cross-origin POST.';
+    exit;
+}
+
 $app = (string) ($_GET['app'] ?? 'overview');
 $query = $_GET;
 $post = $_POST;

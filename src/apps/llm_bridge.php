@@ -53,6 +53,7 @@ final class LlmBridge
             $started = microtime(true);
             $response = Http::postJson(rtrim((string) $provider['base_url'], '/') . '/chat/completions', $body, [
                 'timeout' => (int) ($provider['timeout'] ?? 60),
+                'allow_private' => (bool) ($provider['allow_private'] ?? false),
                 'headers' => [
                     'Content-Type: application/json',
                     'Authorization: Bearer ' . (string) ($provider['api_key'] ?? ''),

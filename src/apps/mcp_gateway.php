@@ -77,11 +77,18 @@ final class McpGateway
         if ($method === 'tools/list') {
             $tools = [];
             foreach (array_keys((array) $config['servers']) as $server) {
-                if (!self::allowed($allow, $server . '.*') && !self::allowed($allow, '*')) {
+                if (!self::serverVisible($allow, $server)) {
                     continue;
                 }
                 foreach (self::backendTools($server, $config['servers'][$server]) as $tool) {
-                    $tool['name'] = $server . '.' . $tool['name'];
+                    $full = $server . '.' . (string) ($tool['name'] ?? '');
+                    if (!self::allowed($allow, $full) && !self::allowed($allow, $server . '.*') && !self::allowed($allow, '*')) {
+                        continue;
+                    }
+                    if (isset($tool['inputSchema']['properties']) && $tool['inputSchema']['properties'] === []) {
+                        $tool['inputSchema']['properties'] = new \stdClass();
+                    }
+                    $tool['name'] = $full;
                     $tools[] = $tool;
                 }
             }
@@ -108,7 +115,7 @@ final class McpGateway
                 return ['status' => 200, 'body' => self::ok($id, $result)];
             } catch (\Throwable $e) {
                 self::audit($token, $full, false, $started);
-                return ['status' => 200, 'body' => self::ok($id, ['content' => [['type' => 'text', 'text' => $e->getMessage()], 'isError' => true]])];
+                return ['status' => 200, 'body' => self::ok($id, ['content' => [['type' => 'text', 'text' => $e->getMessage()]], 'isError' => true])];
             }
         }
         return ['status' => 200, 'body' => ['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => -32601, 'message' => 'Method not found']]];
@@ -120,6 +127,19 @@ final class McpGateway
             return trim($m[1]);
         }
         return '';
+    }
+
+    private static function serverVisible(array $allow, string $server): bool
+    {
+        if (self::allowed($allow, '*') || self::allowed($allow, $server . '.*')) {
+            return true;
+        }
+        foreach ($allow as $pattern) {
+            if (str_starts_with($pattern, $server . '.')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function allowed(array $allow, string $needle): bool

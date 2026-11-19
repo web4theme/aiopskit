@@ -270,6 +270,13 @@ Back up the `storage/` directory if the data matters. Nothing is sent anywhere.
   of version control and readable only by the PHP user.
 - Odoo writes are off by default and require an explicit model allowlist.
 - AnyPHP MCP executes configured commands. Treat `config/mcp-tools.php` as code.
+- The HTTP client does not follow redirects, so a public URL cannot bounce the
+  server to an internal address. Configure the final URL directly.
+- Odoo may live on a private network: `odoo.allow_private` defaults to `true`.
+  For a local model server (Ollama, LM Studio, vLLM) set `allow_private => true`
+  on that provider in `config/bridge.php`.
+- The web UI rejects POSTs whose `Origin`/`Referer` does not match the host.
+  This is not a substitute for authentication.
 - There is no multi-user mode, no roles and no audit of the web UI itself.
 
 ## 6. Limitations (read this before buying)

@@ -198,11 +198,11 @@ final class Http
         if (!preg_match('#^https?://#i', $url)) {
             return self::error('Only http/https URLs are supported.');
         }
-        if (self::isForbiddenHost($url) && empty($options['allow_private'])) {
-            return self::error('Refusing to call a private or loopback address.');
-        }
         if (self::$transport !== null) {
             return (self::$transport)($url, $options);
+        }
+        if (self::isForbiddenHost($url) && empty($options['allow_private'])) {
+            return self::error('Refusing to call a private or loopback address.');
         }
         $timeout = (int) ($options['timeout'] ?? 15);
         $method = strtoupper((string) ($options['method'] ?? 'GET'));
@@ -212,7 +212,7 @@ final class Http
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 3,
             CURLOPT_CONNECTTIMEOUT => min(10, $timeout),
             CURLOPT_TIMEOUT => $timeout,
@@ -283,13 +283,25 @@ final class Http
         if (!is_string($host) || $host === '') {
             return true;
         }
-        $host = strtolower($host);
-        if (in_array($host, ['localhost', '127.0.0.1', '::1'], true) || str_ends_with($host, '.local') || str_ends_with($host, '.internal')) {
+        $host = trim(strtolower($host), '[]');
+        if (in_array($host, ['localhost', '127.0.0.1', '::1', '0.0.0.0'], true) || str_ends_with($host, '.local') || str_ends_with($host, '.internal')) {
             return true;
         }
-        $ips = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : (gethostbynamel($host) ?: []);
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+        }
+        $ips = [];
+        foreach (dns_get_record($host, DNS_A | DNS_AAAA) ?: [] as $record) {
+            $ips[] = $record['ip'] ?? $record['ipv6'] ?? '';
+        }
+        if ($ips === []) {
+            $ips = gethostbynamel($host) ?: [];
+        }
+        if ($ips === []) {
+            return true;
+        }
         foreach ($ips as $ip) {
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
                 return true;
             }
         }

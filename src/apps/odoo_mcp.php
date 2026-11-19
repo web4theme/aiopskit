@@ -64,7 +64,7 @@ final class OdooClient
             'method' => 'call',
             'id' => bin2hex(random_bytes(6)),
             'params' => ['service' => $service, 'method' => $method, 'args' => $args],
-        ], ['timeout' => 30]);
+        ], ['timeout' => 30, 'allow_private' => (bool) Config::get('odoo.allow_private', true)]);
         if ($response['error'] !== null) {
             throw new \RuntimeException('Odoo transport error: ' . $response['error']);
         }
@@ -132,7 +132,11 @@ final class OdooMcp
                 while (($header = fgets(STDIN)) !== false && trim($header) !== '') {
                 }
                 $body = '';
-                while (strlen($body) < $length && ($chunk = fgets(STDIN)) !== false) {
+                while (strlen($body) < $length) {
+                    $chunk = fread(STDIN, $length - strlen($body));
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
                     $body .= $chunk;
                 }
                 $line = trim($body);
