@@ -1,0 +1,7 @@
+storage/*.sqlite
+storage/*.sqlite-*
+storage/*.jsonl
+config/config.php
+config/gateway.php
+config/bridge.php
+.DS_Store

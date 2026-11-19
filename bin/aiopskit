@@ -1,0 +1,29 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/src/bootstrap.php';
+
+use AIOpsKit\Apps\Registry;
+
+$argv = $_SERVER['argv'] ?? [];
+array_shift($argv);
+$appName = array_shift($argv);
+
+if ($appName === null || $appName === 'help' || $appName === '--help' || $appName === '-h') {
+    fwrite(STDOUT, "AIOpsKit 1.0\n\n");
+    fwrite(STDOUT, "Usage: aiopskit <app> [command] [options]\n\nApps:\n");
+    foreach (array_keys(Registry::all()) as $name) {
+        fwrite(STDOUT, '  ' . $name . "\n");
+    }
+    fwrite(STDOUT, "\nRun `aiopskit <app> help` for app-specific commands.\n");
+    exit(0);
+}
+
+$class = Registry::resolve($appName);
+if ($class === null) {
+    fwrite(STDERR, 'Unknown app: ' . $appName . "\n");
+    exit(2);
+}
+
+exit($class::cli($argv));
